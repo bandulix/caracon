@@ -1,0 +1,124 @@
+from m5stack import *
+from m5ui import *
+from uiflow import *
+import machine
+import urequests
+import wifiCfg
+from m5stack import touch
+import time
+
+setScreenColor(15)
+
+
+ultraheat = None
+temp_act = None
+ultraheatswitch = None
+temp_soll = None
+hysterese = None
+nachtabsenkung = None
+heater = None
+
+wifiCfg.autoConnect(lcdShow=False)
+
+rectangle0 = M5Rect(0, 800, 270, 160, 15, 0)
+rectangle1 = M5Rect(270, 800, 270, 160, 15, 0)
+solltemp = M5TextBox(202, 541, "22.0", lcd.FONT_DejaVu56, 0, rotate=0)
+triangle0 = M5Triangle(266, 449, 205, 510, 325, 510, 3, 3)
+temperatur = M5TextBox(186, 93, "00.0", lcd.FONT_DejaVu72, 0, rotate=0)
+triangle1 = M5Triangle(266, 688, 205, 629, 324, 629, 3, 3)
+s5004on = M5Rect(0, 760, 270, 40, 0, 0)
+ultraheaton = M5Rect(270, 760, 270, 40, 0, 0)
+label0 = M5TextBox(219, 261, "00.0", lcd.FONT_DejaVu40, 0, rotate=0)
+label1 = M5TextBox(120, 167, "TEMPERATURE CELSIUS", lcd.FONT_DejaVu24, 5, rotate=0)
+label2 = M5TextBox(190, 307, "HUMIDITY %", lcd.FONT_DejaVu24, 5, rotate=0)
+label3 = M5TextBox(215, 601, "SET TEMP", lcd.FONT_DejaVu18, 5, rotate=0)
+rectangle2 = M5Rect(0, 0, 480, 10, 11, 11)
+rectangle3 = M5Rect(0, 10, 347, 17, 13, 13)
+label4 = M5TextBox(350, 13, "CARAHEAT 0.1", lcd.FONT_Ubuntu, 0, rotate=0)
+label5 = M5TextBox(100, 769, "AUTO", lcd.FONT_DejaVu24, 15, rotate=0)
+label6 = M5TextBox(368, 769, "AUTO", lcd.FONT_DejaVu24, 15, rotate=0)
+ultrahea = M5TextBox(289, 868, "ULTRAHEAT", lcd.FONT_DejaVu40, 0, rotate=0)
+heizung = M5TextBox(70, 868, "S5004", lcd.FONT_DejaVu40, 0, rotate=0)
+
+
+# Describe this function...
+def control_ultraheat():
+  global ultraheat, temp_act, ultraheatswitch, temp_soll, hysterese, nachtabsenkung, heater
+  if temp_act < temp_soll and ultraheatswitch == 0:
+    try:
+      req = urequests.request(method='GET', url='http://192.168.178.115/rpc/Switch.Set?id=0&on=true', headers={})
+      ultraheatswitch = 1
+    except:
+      pass
+  if temp_act >= temp_soll and ultraheatswitch == 1:
+    try:
+      req = urequests.request(method='GET', url='http://192.168.178.115/rpc/Switch.Set?id=0&on=false', headers={})
+      ultraheatswitch = 0
+    except:
+      pass
+
+
+def buttonDOWN_pressFor():
+  global ultraheat, temp_act, ultraheatswitch, temp_soll, hysterese, nachtabsenkung, heater
+  machine.reset()
+  pass
+btnDOWN.pressFor(0.8, buttonDOWN_pressFor)
+
+@timerSch.event('gettemp')
+def tgettemp():
+  global ultraheat, temp_act, ultraheatswitch, temp_soll, hysterese, nachtabsenkung, heater
+  try:
+    req = urequests.request(method='GET', url='http://192.168.178.115/rpc/temperature.GetStatus?id=100', headers={'Content-Type':'text/html'})
+    if temp_act != float(str((req.text)).split(',')[1].replace('"tC":', '')):
+      temp_act = float(str((req.text)).split(',')[1].replace('"tC":', ''))
+      temperatur.setText(str(temp_act))
+      lcd.partial_show(186, 93, 200, 70)
+  except:
+    temperatur.setText('ER.R')
+    lcd.partial_show(186, 93, 200, 70)
+  pass
+
+
+timerSch.run('gettemp', 30000, 0x00)
+temp_act = 10
+temp_soll = 22
+nachtabsenkung = 18
+ultraheat = 0
+ultraheatswitch = 0
+ultraheaton.hide()
+hysterese = 0.3
+heater = 0
+s5004on.hide()
+lcd.show()
+while True:
+  if touch.status():
+    wait_ms(1000)
+    if (touch.read()[0]) > 0 and (touch.read()[0]) < 270 and (touch.read()[1]) > 760 and (touch.read()[1]) < 960:
+      if heater == 1:
+        s5004on.hide()
+        lcd.partial_show(0, 760, 270, 40)
+        heater = 0
+      else:
+        s5004on.show()
+        label5.show()
+        lcd.partial_show(0, 760, 270, 40)
+        heater = 1
+    if (touch.read()[0]) > 270 and (touch.read()[0]) < 540 and (touch.read()[1]) > 760 and (touch.read()[1]) < 960:
+      if ultraheat == 1:
+        ultraheaton.hide()
+        lcd.partial_show(270, 760, 270, 40)
+        ultraheat = 0
+      else:
+        ultraheaton.show()
+        label6.show()
+        lcd.partial_show(270, 760, 270, 40)
+        ultraheat = 1
+    if (touch.read()[0]) > 205 and (touch.read()[0]) < 325 and (touch.read()[1]) > 449 and (touch.read()[1]) < 510:
+      temp_soll = temp_soll + 0.5
+      solltemp.setText(str(temp_soll))
+      lcd.partial_show(202, 541, 170, 50)
+    if (touch.read()[0]) > 205 and (touch.read()[0]) < 325 and (touch.read()[1]) > 629 and (touch.read()[1]) < 688:
+      temp_soll = temp_soll - 0.5
+      solltemp.setText(str(temp_soll))
+      lcd.partial_show(202, 541, 170, 50)
+  wait_ms(2)
